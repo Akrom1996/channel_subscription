@@ -141,7 +141,7 @@ TEXTS = {
         "btn_back_region": "⬅️ Ortga",
         "btn_renew": "🔄 Obunani uzaytirish",
         "uzcard_info": (
-            "💳 **UzCard P2P Rekvizitlari**\n\nKarta: `8600 1111 2222 3333`\nEga: **A. Obidov**\n"
+            "💳 **UzCard P2P Rekvizitlari**\n\nKarta: `5440 8103 7817 5946`\nEga: **K. Suloymonov**\n"
             "Summa: **100,000 UZS**\n\n⚠️ Payme yoki Click orqali o'tkazma qilgach, "
             "**chek rasmini yoki PDF faylini shu chatga yuboring.**"
         ),
@@ -151,7 +151,7 @@ TEXTS = {
             "**chek rasmini yoki PDF faylini shu chatga yuboring.**"
         ),
         "trc20_info": (
-            "🔗 **USDT TRC-20 Hamyon**\n\nManzil: `UQBv4fuy04XjZpypDJ0f1XOCK0V_dn6YGNFqv7HzUlDA5ezE`\n"
+            "🔗 **USDT TRC-20 Hamyon**\n\nManzil: `TL1DhDQjYWppFy9YtKbCoqcpX5RtKu3VJK`\n"
             "Summa: **10.00 USDT**\n\n⚠️ To'lov amalga oshirilgach, "
             "**tranzaksiya chekini (skrinshot) yoki TrxID matnini shu chatga yuboring.**"
         ),
@@ -176,7 +176,7 @@ TEXTS = {
         "btn_back_region": "⬅️ Back",
         "btn_renew": "🔄 Renew Subscription",
         "uzcard_info": (
-            "💳 **UzCard P2P Details**\n\nCard: `8600 1111 2222 3333`\nHolder: **A. B.**\n"
+            "💳 **UzCard P2P Details**\n\nCard: `5440 8103 7817 5946`\nHolder: **K. Suloymonov**\n"
             "Amount: **100,000 UZS**\n\n⚠️ After transferring via Payme or Click, "
             "**send the receipt screenshot or PDF to this chat.**"
         ),
@@ -186,7 +186,7 @@ TEXTS = {
             "**send the receipt screenshot or PDF to this chat.**"
         ),
         "trc20_info": (
-            "🔗 **USDT TRC-20 Address**\n\nAddress: `UQBv4fuy04XjZpypDJ0f1XOCK0V_dn6YGNFqv7HzUlDA5ezE`\n"
+            "🔗 **USDT TRC-20 Address**\n\nAddress: `TL1DhDQjYWppFy9YtKbCoqcpX5RtKu3VJK`\n"
             "Amount: **10.00 USDT**\n\n⚠️ Once paid, "
             "**send the transaction screenshot or TxID text to this chat.**"
         ),
