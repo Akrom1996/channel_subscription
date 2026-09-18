@@ -6,5 +6,7 @@ services:
     container_name: bot-payment
     env_file:
       - .env
+    volumes:
+      - ./subscriptions.db:/app/subscriptions.db
     restart: unless-stopped
     mem_limit: 512m

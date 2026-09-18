@@ -2,6 +2,7 @@ import os
 import asyncio
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Dict, Optional, List, Tuple
 
 import aiosqlite
@@ -32,34 +33,56 @@ CRYPTO_BOT_URL = os.getenv("CRYPTO_BOT_URL", "https://pay.crypt.bot/app?startapp
 
 INVITE_LINK_EXPIRE_SECONDS = 24 * 60 * 60  # 24 hours link validity
 CHECK_INTERVAL_SECONDS = 3600             # Check background queue hourly
-DB_NAME = "subscriptions.db"
+DB_NAME = os.getenv("DB_NAME", "subscriptions.db")
 
 PROCESSED_DECISIONS: set[int] = set()
+PENDING_USERS: Dict[int, str] = {}
+
+def get_current_utc_time_str() -> str:
+    """Returns current UTC timestamp formatted with GMT indicator."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC (GMT)")
 
 # --- Database Layer ---
 async def init_db():
+    db_dir = os.path.dirname(DB_NAME)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute("""
             CREATE TABLE IF NOT EXISTS subscriptions (
                 user_id INTEGER PRIMARY KEY,
+                user_name TEXT,
+                utc_time TEXT,
                 expire_timestamp INTEGER,
                 status TEXT DEFAULT 'active',
                 reminded_3d INTEGER DEFAULT 0
             )
         """)
+        # Safe migration for existing databases
+        async with db.execute("PRAGMA table_info(subscriptions)") as cursor:
+            existing_cols = [row[1] for row in await cursor.fetchall()]
+
+        if "user_name" not in existing_cols:
+            await db.execute("ALTER TABLE subscriptions ADD COLUMN user_name TEXT")
+        if "utc_time" not in existing_cols:
+            await db.execute("ALTER TABLE subscriptions ADD COLUMN utc_time TEXT")
+
         await db.commit()
 
-async def add_subscription(user_id: int, duration_days: int = 30):
+async def add_subscription(user_id: int, user_name: Optional[str] = None, duration_days: int = 30):
+    now_utc_str = get_current_utc_time_str()
     expire_at = int(time.time()) + (duration_days * 86400)
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute("""
-            INSERT INTO subscriptions (user_id, expire_timestamp, status, reminded_3d)
-            VALUES (?, ?, 'active', 0)
+            INSERT INTO subscriptions (user_id, user_name, utc_time, expire_timestamp, status, reminded_3d)
+            VALUES (?, ?, ?, ?, 'active', 0)
             ON CONFLICT(user_id) DO UPDATE SET
+                user_name = COALESCE(excluded.user_name, subscriptions.user_name),
+                utc_time = excluded.utc_time,
                 expire_timestamp = excluded.expire_timestamp,
                 status = 'active',
                 reminded_3d = 0
-        """, (user_id, expire_at))
+        """, (user_id, user_name, now_utc_str, expire_at))
         await db.commit()
 
 async def get_upcoming_expirations(days_before: int = 3) -> List[Tuple[int, int]]:
@@ -306,7 +329,16 @@ async def process_receipt(message: Message, state: FSMContext, bot: Bot):
     tx = t(lang)
 
     user_id = message.from_user.id
-    username = message.from_user.username or "no_username"
+    raw_user = message.from_user
+    if raw_user.username:
+        user_name = f"@{raw_user.username}"
+        if raw_user.full_name:
+            user_name += f" ({raw_user.full_name})"
+    else:
+        user_name = raw_user.full_name or f"User {user_id}"
+
+    now_utc_str = get_current_utc_time_str()
+    PENDING_USERS[user_id] = user_name
 
     admin_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(
@@ -321,7 +353,8 @@ async def process_receipt(message: Message, state: FSMContext, bot: Bot):
 
     caption = (
         f"📥 **New payment receipt**\n\n"
-        f"👤 User: @{username} (`{user_id}`)\n"
+        f"👤 User: {user_name} (`{user_id}`)\n"
+        f"🕒 Time: `{now_utc_str}`\n"
         f"💳 Method: {METHOD_LABELS.get(method, method)}\n"
         f"🌐 Lang: {lang}"
     )
@@ -375,8 +408,22 @@ async def handle_admin_decision(call: CallbackQuery, callback_data: AdminDecisio
     approved = callback_data.action == "approve"
 
     if approved:
+        # Retrieve user_name from pending cache or fallback to get_chat
+        target_user_name = PENDING_USERS.pop(target_user_id, None)
+        if not target_user_name:
+            try:
+                chat = await bot.get_chat(target_user_id)
+                if chat.username:
+                    target_user_name = f"@{chat.username}"
+                    if chat.full_name:
+                        target_user_name += f" ({chat.full_name})"
+                else:
+                    target_user_name = chat.full_name or f"User {target_user_id}"
+            except Exception:
+                target_user_name = f"user_{target_user_id}"
+
         # Register 30-day subscription in SQLite
-        await add_subscription(user_id=target_user_id, duration_days=30)
+        await add_subscription(user_id=target_user_id, user_name=target_user_name, duration_days=30)
         text = f"{TEXTS['uz']['approved']}\n\n{TEXTS['en']['approved']}"
 
         invite_link = None
@@ -396,6 +443,7 @@ async def handle_admin_decision(call: CallbackQuery, callback_data: AdminDecisio
         else:
             text = f"{TEXTS['uz']['approved_no_link']}\n\n{TEXTS['en']['approved_no_link']}"
     else:
+        PENDING_USERS.pop(target_user_id, None)
         text = f"{TEXTS['uz']['rejected']}\n\n{TEXTS['en']['rejected']}"
 
     try:
