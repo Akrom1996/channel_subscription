@@ -1,4 +1,5 @@
 import os
+import html
 import asyncio
 import logging
 import time
@@ -307,17 +308,27 @@ def t(lang: str) -> Dict[str, str]:
 
 
 # --- UI Helpers ---
-async def safe_edit_text(call: CallbackQuery, text: str, reply_markup: Optional[InlineKeyboardMarkup] = None) -> None:
+async def safe_edit_text(
+    call: CallbackQuery,
+    text: str,
+    reply_markup: Optional[InlineKeyboardMarkup] = None,
+    parse_mode: Optional[str] = "Markdown",
+) -> None:
     try:
-        await call.message.edit_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        await call.message.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
     except TelegramBadRequest as e:
         if "message is not modified" not in str(e).lower():
             logging.warning(f"edit_text failed: {e}")
 
 
-async def safe_edit_caption(call: CallbackQuery, caption: str, reply_markup: Optional[InlineKeyboardMarkup] = None) -> None:
+async def safe_edit_caption(
+    call: CallbackQuery,
+    caption: str,
+    reply_markup: Optional[InlineKeyboardMarkup] = None,
+    parse_mode: Optional[str] = "Markdown",
+) -> None:
     try:
-        await call.message.edit_caption(caption=caption, reply_markup=reply_markup, parse_mode="Markdown")
+        await call.message.edit_caption(caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
     except TelegramBadRequest as e:
         if "message is not modified" not in str(e).lower():
             logging.warning(f"edit_caption failed: {e}")
@@ -437,12 +448,14 @@ async def process_receipt(message: Message, state: FSMContext, bot: Bot):
         ),
     ]])
 
+    # HTML with escaped user-supplied values: usernames / names / TxIDs can
+    # contain "_", "*", "`" etc. which break legacy Markdown parsing.
     caption = (
-        f"📥 **New payment receipt**\n\n"
-        f"👤 User: {user_name} (`{user_id}`)\n"
-        f"🕒 Time: `{now_utc_str}`\n"
-        f"💳 Method: {METHOD_LABELS.get(method, method)}\n"
-        f"🌐 Lang: {lang}"
+        f"📥 <b>New payment receipt</b>\n\n"
+        f"👤 User: {html.escape(user_name)} (<code>{user_id}</code>)\n"
+        f"🕒 Time: <code>{html.escape(now_utc_str)}</code>\n"
+        f"💳 Method: {html.escape(METHOD_LABELS.get(method, method))}\n"
+        f"🌐 Lang: {html.escape(lang)}"
     )
 
     if message.photo:
@@ -451,7 +464,7 @@ async def process_receipt(message: Message, state: FSMContext, bot: Bot):
             photo=message.photo[-1].file_id,
             caption=caption,
             reply_markup=admin_keyboard,
-            parse_mode="Markdown",
+            parse_mode="HTML",
         )
     elif message.document:
         await bot.send_document(
@@ -459,14 +472,14 @@ async def process_receipt(message: Message, state: FSMContext, bot: Bot):
             document=message.document.file_id,
             caption=caption,
             reply_markup=admin_keyboard,
-            parse_mode="Markdown",
+            parse_mode="HTML",
         )
     else:
         await bot.send_message(
             chat_id=ADMIN_CHAT_ID,
-            text=f"{caption}\n\n🔗 TxID: `{message.text}`",
+            text=f"{caption}\n\n🔗 TxID: <code>{html.escape(message.text)}</code>",
             reply_markup=admin_keyboard,
-            parse_mode="Markdown",
+            parse_mode="HTML",
         )
 
     await message.answer(tx["receipt_ok"], parse_mode="Markdown")
@@ -542,18 +555,22 @@ async def handle_admin_decision(call: CallbackQuery, callback_data: AdminDecisio
         text = f"{TEXTS['uz']['rejected']}\n\n{TEXTS['en']['rejected']}"
 
     try:
-        await bot.send_message(chat_id=target_user_id, text=text, parse_mode="Markdown", disable_web_page_preview=True)
+        # No parse_mode: these messages contain no formatting, and invite
+        # links can contain "_" which would break legacy Markdown parsing.
+        await bot.send_message(chat_id=target_user_id, text=text, parse_mode=None, disable_web_page_preview=True)
     except Exception as e:
         logging.warning(f"Could not notify user {target_user_id}: {e}")
 
     status_line = "✅ APPROVED" if approved else "❌ REJECTED"
-    original_caption = call.message.caption or call.message.text or ""
-    new_text = f"{original_caption}\n\n{status_line}"
+    # html_text rebuilds the original text/caption as valid, escaped HTML,
+    # preserving the bold/code formatting from the original message.
+    original_html = call.message.html_text or ""
+    new_text = f"{original_html}\n\n{status_line}"
 
     if call.message.caption is not None:
-        await safe_edit_caption(call, new_text, reply_markup=None)
+        await safe_edit_caption(call, new_text, reply_markup=None, parse_mode="HTML")
     else:
-        await safe_edit_text(call, new_text, reply_markup=None)
+        await safe_edit_text(call, new_text, reply_markup=None, parse_mode="HTML")
 
     await call.answer(status_line)
 
