@@ -1,0 +1,55 @@
+name: Deploy Subscription Bot to Hetzner
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-26.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Deploy to Hetzner via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HETZNER_HOST }}
+          username: ${{ secrets.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_KEY }}
+          port: ${{ secrets.HETZNER_PORT }}
+          command_timeout: 30m
+          debug: true
+
+          script: |
+            set -euxo pipefail
+
+            echo "=== PROJECT ==="
+            cd /root/channel_subscription
+            pwd
+            git status
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "=== COMPOSE CONFIG ==="
+            docker compose config
+
+            echo "=== BUILD ==="
+            docker compose build --no-cache
+
+            echo "=== START ==="
+            docker compose up -d --force-recreate --remove-orphans
+
+            echo "=== CONTAINERS ==="
+            docker compose ps
+            docker ps -a
+
+            echo "=== CLEANUP ==="
+            docker image prune -f
+            docker builder prune -f
+
+            echo "=== FINAL ==="
+            docker compose ps
+            docker ps
